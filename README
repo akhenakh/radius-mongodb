@@ -20,6 +20,16 @@ mongo {
 	* Add in your site configuration in authorize sub-section "mongo"
 * Run radiusd
 
+* For accounting
+  * Edit your configuration as follow
+
+mongo {
+  acct_base = "radius.acct"
+  only_stop = "yes"
+}
+
+only_stop will account only stop tickets using Acct-Status-Type
+
 Note :
 If you use rlm_mongo in inner-tunnel and mac filter, ensure you have this in eap.conf
 copy_request_to_tunnel = yes

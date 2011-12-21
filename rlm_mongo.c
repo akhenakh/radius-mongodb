@@ -43,6 +43,7 @@ typedef struct rlm_mongo_t {
 	char	*password_field;
 	char	*mac_field;
 	char	*enable_field;
+	char	*only_stop;
 } rlm_mongo_t;
 
 static const CONF_PARSER module_config[] = {
@@ -56,6 +57,7 @@ static const CONF_PARSER module_config[] = {
   { "password_field",  PW_TYPE_STRING_PTR, offsetof(rlm_mongo_t,password_field), NULL,  ""},
   { "mac_field",  PW_TYPE_STRING_PTR, offsetof(rlm_mongo_t,mac_field), NULL,  ""},
   { "enable_field",  PW_TYPE_STRING_PTR, offsetof(rlm_mongo_t,enable_field), NULL,  ""},
+  { "only_stop",  PW_TYPE_STRING_PTR, offsetof(rlm_mongo_t,only_stop), NULL,  ""},
   
   { NULL, -1, 0, NULL, NULL }		/* end the list */
 };
@@ -225,12 +227,23 @@ static int mongo_account(void *instance, REQUEST *request)
 	const char *attr;
 	char value[MAX_STRING_LEN+1];
 	VALUE_PAIR *vp = request->packet->vps;
+        // shall we insert this packet or not
+        int insert;
 
 	bson_buffer_init(&buf);
 	bson_append_new_oid(&buf, "_id");
 
+	insert = 0;
+
 	while (vp) {
 		attr = vp->name;
+		if ((strcmp(attr, "Acct-Status-Type") == 0) && ((strcmp(data->only_stop, "") != 0))) {
+			if ((vp->vp_integer & 0xffffff) != 2) {
+				break;
+			} else {
+				insert = 1;
+			}
+		}
 		switch (vp->type) {
 			case PW_TYPE_INTEGER:
 				bson_append_int(&buf, attr, vp->vp_integer & 0xffffff);
@@ -245,6 +258,8 @@ static int mongo_account(void *instance, REQUEST *request)
 			default:
 				vp_prints_value(value, sizeof(value), vp, 0);
 				bson_append_string(&buf, attr, value);
+				// akh
+				RDEBUG("mongo default insert %s", value);
 				break;
 		}
 		vp = vp->next;
@@ -252,12 +267,14 @@ static int mongo_account(void *instance, REQUEST *request)
 	bson_from_buffer(&b, &buf);
 
 	MONGO_TRY {
-		mongo_insert(conn, data->acct_base, &b);
+		if (insert == 1) {
+			mongo_insert(conn, data->acct_base, &b);
+			RDEBUG("accounting record was inserted");
+		}
 	} MONGO_CATCH {
 		radlog(L_ERR, "mongo_insert failed");
 		return RLM_MODULE_FAIL;
 	}
-	RDEBUG("accounting record was inserted");
 
 	bson_destroy(&b);
 	return RLM_MODULE_OK;
